@@ -350,238 +350,44 @@ ingame proc near
     mov dl,0
     mov eat_food[0],dl
 ai_game:
-    mov al,1
-    mov select[0],al
-    mov al,ai_death
-    cmp al,1
-    je clear_snake
-    call search_path
-    call go_snake
-    call draw_snake
-    mov dl,eat_food[0]
-    cmp dl,0
-    je ingame
-    call food_create
-    mov dl,0
-    mov eat_food[0],dl
+  
     jmp ingame
 end_ingame:
-	call clear_snake
+	call clear_snake ;清除玩家控制的蛇
+	;mov select[0], 1 ;清除AI蛇
+	;call clear_snake
     call end_deal
     ret
 ingame endp
 ;--------------------------------------------------
+;把屏幕上的蛇清除掉子程序
+;入口参数: snack_head[0]
+;
 clear_snake proc near
+    push ax
+	push bx
+    mov al, select[0]  ;判断是那条蛇
+	cmp al, 1
+	je  clear_ai_s_start
+	jmp clear_s_start
+clear_s_start:
 	mov bx,snake_head[0]
+	jmp clear_s
+clear_ai_s_start:
+    mov bx,ai_snake_head[0]
 clear_s:
 	cmp bx,2048
 	je clear_end
 	mov ax,s_locate[bx]
-	mov cx,1
-	mov s_locate[bx],cx
+	mov s_locate[bx], 1
 	mov bx,ax
 	jmp clear_s
 clear_end:
-	mov cx,1
-	mov s_locate[bx],cx
-	jmp clear_snake_tail
-	mov bx,ai_snake_head[0]
-clear_ai_s:
-	cmp bx,2048
-	je clear_ai_end
-	mov ax,s_locate[bx]
-	mov cx,1
-	mov s_locate[bx],cx
-	mov bx,ax
-	jmp clear_ai_s
-clear_ai_end:
-	mov cx,1
-	mov s_locate[bx],cx
-clear_snake_tail:
+    pop bx
+	pop ax
 	ret
 clear_snake endp
-;--------------------------------------------------
-search_path proc near    
-    mov al,84
-    mov ch,food_y
-    mul ch
-    mov di,ax
-    mov cl,food_x
-    mov al,2
-    mul cl
-    add di,ax
-    mov bx,ai_snake_head[0]
-    mov ax,bx
-    mov ai_temp[0],ax
-BFS:
-    cmp ax,di
-    je relay_dir
-    cmp ax,84
-    jge ai_up
-    jmp ai_snake_down
-ai_up:
-    mov ax,ai_temp[0]
-    sub ax,84
-    mov si,ax
-    mov dx,s_locate[si]
-    cmp dx,1
-    je queue_up
-    jmp ai_snake_down
-queue_up:
-    mov bx,queue_tail[0]
-    mov si,ax
-    mov dx,3
-    mov s_locate[si],dx
-    mov value_temp[bx],ax
-    add bx,2
-    mov queue_tail[0],bx
-    mov bl,0
-    mov ai_death[0],bl
-ai_snake_down:
-    mov ax,ai_temp[0]
-    cmp ax,1008
-    jb ai_down
-    jmp ai_snake_left
-relay_dir:
-    jmp search_dir
-ai_down:
-    mov ax,ai_temp[0]
-    add ax,84
-    mov si,ax
-    mov dx,s_locate[si]
-    cmp dx,1
-    je queue_down
-    jmp ai_snake_left
-queue_down:        
-    mov bx,queue_tail[0]
-    mov si,ax
-    mov dx,5
-    mov s_locate[si],dx
-    mov value_temp[bx],ax
-    add bx,2
-    mov queue_tail[0],bx
-    mov bl,0
-    mov ai_death[0],bl
-ai_snake_left:
-    mov ax,ai_temp[0]
-    mov bl,84
-    div bl
-    cmp ah,0
-    jg ai_left
-    jmp ai_snake_right
-ai_left:
-    mov ax,ai_temp[0]
-    sub ax,2
-    mov si,ax
-    mov dx,s_locate[si]
-    cmp dx,1
-    je queue_left
-    jmp ai_snake_right
-queue_left:    
-    mov bx,queue_tail[0]
-    mov si,ax
-    mov dx,7
-    mov s_locate[si],dx
-    mov value_temp[bx],ax
-    add bx,2
-    mov queue_tail[0],bx
-    mov bl,0
-    mov ai_death[0],bl
-ai_snake_right:
-    mov ax,ai_temp[0]
-    mov dx,ax
-    mov bl,84
-    div bl
-    cmp ah,82
-    jb ai_right
-    jmp ai_end
-ai_right:
-    mov ax,ai_temp[0]
-    add ax,2
-    mov si,ax
-    mov dx,s_locate[si]
-    cmp dx,1
-    je queue_right
-    jmp ai_end
-queue_right:    
-    mov bx,queue_tail[0]
-    mov si,ax
-    mov dx,9
-    mov s_locate[si],dx
-    mov value_temp[bx],ax
-    add bx,2
-    mov queue_tail[0],bx
-    mov bl,0
-    mov ai_death[0],bl
-ai_end:
-    mov bx,queue_head[0]
-    mov ax,value_temp[bx]
-    mov ai_temp[0],ax
-    add bx,2
-    mov queue_head[0],bx
-    jmp BFS
-search_dir:
-    cmp di,ai_snake_head[0]
-    je search_end
-    mov ax,s_locate[di]
-    cmp ax,3
-    je back_up
-    cmp ax,5
-    je back_down
-    cmp ax,7
-    je back_left
-    cmp ax,9
-    je back_right
-back_up:
-    add di,84
-    mov al,0
-    mov ai_snake_dir[0],al
-    jmp search_dir
-back_down:
-    sub di,84
-    mov al,1
-    mov ai_snake_dir[0],al
-    jmp search_dir
-back_left:
-    add di,2
-    mov al,2
-    mov ai_snake_dir[0],al
-    jmp search_dir
-back_right:
-    sub di,2
-    mov al,3
-    mov ai_snake_dir[0],al
-    jmp search_dir
-search_end:
-    mov ax,0
-    mov queue_head[0],ax
-    mov queue_tail[0],ax
-    mov cx,1090
-initial_value:
-    mov si,cx
-    mov ax,s_locate[si]
-    cmp ax,3
-    je initial
-    cmp ax,5
-    je initial
-    cmp ax,7
-    je initial
-    cmp ax,9
-    je initial
-    cmp cx,0
-    je initial_end
-    sub cx,2
-    jmp initial_value
-initial:
-    mov ax,1
-    mov s_locate[si],ax
-    cmp cx,0
-    je initial_end
-    sub cx,2
-    jmp initial_value
-initial_end:
-    ret
-search_path endp
+
 ;--------------------------------------------------
 end_deal proc near
     mov bx, offset game_flag
@@ -939,6 +745,10 @@ draw_end:
     ret
 draw_snake endp
 ;--------------------------------------------------
+;在屏幕上清除一个字符的子程序
+;入口参数: value_temp[10] 存放该字符在游戏区域的坐标值
+;出口参数:无
+;作用: 把指定把屏幕上坐标的字符替换成空格
 clear_tail proc near
     mov ax,value_temp[10]
     mov dl,84
@@ -949,7 +759,7 @@ clear_tail proc near
     mov bl,2
     div bl
     mov coordinate_x,al
-    call locate
+    call locate         ;得到字符在显存的偏移量
     
     mov es,value_temp[0]
     mov si,value_temp[2]
@@ -960,7 +770,7 @@ clear_tail endp
 ;--------------------------------------------------
 ;在游戏区域随机放置一个放置一个字符的子函数
 ;入口参数: 无
-;出口参数: food_x 存放 字符在游戏屏幕区域的列数, food_y 存放 字符 在屏幕区域的行数
+;出口参数: food_x 存放 字符在游戏屏幕区域的行数
 food_create proc near
 food_begin:
     mov ah,0      
@@ -1038,7 +848,7 @@ locate proc near
     ret
 locate endp
 ;--------------------------------------------------
-;清屏函数
+;清屏子程序
 clear proc near
     push ds
     push cx
