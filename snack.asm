@@ -4,17 +4,17 @@ data segment
     attr2       db    0Eh  ;前景黄, 背景黑                          
     attr3       db    04h  ;前景红, 背景黑                        
     attr4       db    89h  ;前景蓝闪烁, 背景黑                           ;0a 表示 换行符                                            
-    show00      db              "************************************************************$";| 
+    show00      db    "************************************************************$";| 
     show01      db    "*                   This is a snake game                   *$";|   
     show02      db    "************************************************************$";|
     show03      db    "                                                            $";|
     show04      db    "**************  ############################################$";|
-    show05      db    "* sorce:000  *  #@->                                       #$";|
+    show05      db    "* sorce:000  *  #                                          #$";|
     show06      db    "*            *  #                                          #$";|
     show07      db    "*            *  #                                          #$";|
     show08      db    "* level:0    *  #                                          #$";|
     show09      db    "*            *  #                                          #$";|
-    show10      db    "*            *  #          @->                             #$";|
+    show10      db    "*            *  #          o++                             #$";|
     show11      db    "* operate:   *  #                                          #$";|
     show12      db    "*  up:     w *  #                                          #$";|
     show13      db    "*  down:   s *  #                                          #$";|
@@ -106,7 +106,7 @@ data segment
     music_di    dw    0
     select      db    0             ;0表示玩家自己控制的蛇,1表示AI蛇
     s_locate    dw    546    dup(1) ;表示蛇的坐标, 42*13 = 546
-    coordinate  dw    0532h,05d2h,0672h,0712h,07b2h,0852h,08f2h,0992h,0a32h,0ad2h,0b72h,0c12h,0cb2h ;这个表示食物出现的区域，表示一个数组
+    coordinate  dw    0532h,05d2h,0672h,0712h,07b2h,0852h,08f2h,0992h,0a32h,0ad2h,0b72h,0c12h,0cb2h ;这是个游戏区域的每一行的开头在屏幕的显存偏移量
     level       db    1 ;这块表示登陆界面中的 level 选项，默认是 1, 3 表示简单，2 表示中等，1 表示困难
     game_flag   db    2 ;0表示死亡，1表示程序退出，2表示胜利
     game_choose db    1
@@ -126,6 +126,7 @@ data segment
     ai_snake_dir db   0 ;ai
     ai_death    db    0 ;1表示死了，0表示还活着
     snake_head  dw    440 ;玩家蛇头坐标
+    snake_tail  dw  0   ;判断蛇头在移动一个位置时有没有处于没有移动时蛇尾的位置
     snake_dir   db    0 ;0表示向上，1向下，2向左，3向右
     info        db    "please input (can't over 3 times error input):$"
 data ends
@@ -144,9 +145,10 @@ start:
     mov ss, ax
     mov sp, 200
     mov dl, 0
+	
     call clear
-    call display ; 登陆界面的显示
-    call display_choose ; 登陆界面的选择处理
+    call display_welcome ; 登陆界面的显示
+    call display_welcome_choose ; 登陆界面的选择处理
     call clear ;清空屏幕
     call init_menu ;初始化信息和数据
     call food_create;随机放置食物
@@ -220,12 +222,14 @@ per_delay:
     ret
 music endp
 ;--------------------------------------------------
-wait_game proc near 
+wait_keyboard proc near 
+    push ax
     mov ah,1        ;检查键盘有无输入
     int 16h
     jz wait_quit    ;如果有则读取键盘输入
     mov ah,0
     int 16h
+	mov ah, snake_dir[0]
     cmp al,'w'
     je dir_w
     cmp al,'s'
@@ -235,36 +239,44 @@ wait_game proc near
     cmp al,'d'
     je dir_d
 dir_w:
+    cmp ah, 1
+	je  wait_quit    
     mov al,0
-    jmp wait_dir
+    jmp set_dir
 dir_s:
+    cmp ah, 0
+	je  wait_quit
     mov al,1
-    jmp wait_dir
+    jmp set_dir
 dir_a:
+    cmp ah, 3
+	je wait_quit
     mov al,2
-    jmp wait_dir
+    jmp set_dir
 dir_d:
+    cmp ah, 2
+	je wait_quit
     mov al,3
-    jmp wait_dir
-wait_dir:
+    jmp set_dir
+set_dir:
     mov snake_dir[0],al
 wait_quit:
+    pop ax
     ret 
-wait_game endp
+wait_keyboard endp
 ;--------------------------------------------------
 ;初始化游戏
-init_menu proc near ;和display 子程序很相像
+init_menu proc near ;和display_welcome 子程序很相像
     mov cx, 13h    ; show00 ~ show18 一共由19行
     mov ax, 0b81fh ;从第四行第九个字符开始输出
     mov es, ax
-    
     mov bx, offset show00
 row:
     push cx
     mov cx, 60   ; 一行有60个字符
     mov si, 0h
 col:
-    mov al, [bx]
+    mov al, [bx] ;需要显示的字符
     mov es:[si], al
     cmp al, '*'  
     je color1
@@ -283,7 +295,7 @@ color3:
 color4:
     mov di, 3h
 loop0:
-    mov ah, [di]
+    mov ah, [di]   ;设置字符的颜色属性
     mov es:[si + 1], ah
     inc bx
     add si, 2
@@ -307,14 +319,7 @@ loop0:
     mov es,ax
     mov al,level[0]      ;在屏幕左侧显示当前的难度等级
     add al,30h
-    mov es:[2],al       
-
-    mov ax,2             ;AI蛇
-    mov s_locate[0],ax   ;蛇头
-    mov ax,4              
-    mov s_locate[2],ax   ;蛇身
-    mov ax,2048
-    mov s_locate[4],ax   ;蛇尾
+    mov es:[2],al           
 
 	mov al,2
 	mov game_flag[0],al
@@ -330,32 +335,26 @@ init_menu endp
 ;--------------------------------------------------
 ;开始游戏
 ingame proc near
-    call wait_game  ;读取键盘事件, 设置蛇的方向
-    mov al,0
-    mov select[0],al;表示玩家控制的蛇
+    call wait_keyboard  ;读取键盘事件, 设置蛇的方向
     call go_snake 
     call music
-    call is_alive
-    mov bx,offset game_flag
+    mov bx,offset game_flag  ;判断蛇有没有死
     mov dl,[bx]
-    cmp dl,0 
+    cmp dl,0   ; 如果game_flag[0] 为0 ,那么蛇已经死了
     je end_ingame 
     call draw_snake 
-    mov bx,offset eat_food
-    mov dl,[bx]
-    cmp dl,0
-    je ai_game
-    call scores_increase
+	mov bl, eat_food[0]
+	cmp bl, 1
+    je  new_food
+	mov dl, 0
+	mov eat_food[0], dl
+	jmp ingame
+new_food:	
     call food_create
-    mov dl,0
-    mov eat_food[0],dl
-ai_game:
-  
+	call scores_increase
     jmp ingame
 end_ingame:
 	call clear_snake ;清除玩家控制的蛇
-	;mov select[0], 1 ;清除AI蛇
-	;call clear_snake
     call end_deal
     ret
 ingame endp
@@ -453,7 +452,7 @@ loop02:
     add bx, 3
     loop row2
     
-    call display_choose
+    call display_welcome_choose
     ret
 end_deal endp
 ;--------------------------------------------------
@@ -506,6 +505,9 @@ trans_char endp
 ;入口参数: 使用了food_y, food_x, snake_head
 ;出口参数: 设置eat_food 标志位, 为0 表示没有吃到, 为1 表示吃到了
 food_eat proc near
+    push ax 
+	push bx
+	push dx
     mov bl,food_y[0] ;食物的行数
     mov al,84        ;一行有84个字节
     mul bl
@@ -517,11 +519,6 @@ food_eat proc near
     mul bl
     add dx,ax        ;dx为食物所在的坐标
     mov ax,dx        
-    mov bl,select[0]
-    cmp bl,0
-    je people_game   ;蛇由玩家控制
-    mov dx,ai_snake_head[0]
-    jmp conti_go
 people_game:
     mov dx,snake_head[0]
 conti_go:
@@ -535,54 +532,47 @@ eat:
     mov eat_food[0],dl
     jmp eat_end
 eat_end:
+    pop dx
+	pop bx
+	pop ax
     ret
 food_eat endp
-;--------------------------------------------------
-;判断蛇是否或着的子程序
-;使用 game_flag 来判断 , [game_flag]若为0 ,则蛇死了, 否则蛇还活着
-;
-is_alive proc near
-    mov al,game_flag[0]
-    cmp al,0
-    je  alive_end
-    mov al,eat_food[0] ;[eat_food] 为0 表示没有吃到食物, 为1 表示吃到食物了
-    cmp al,1            
-    je  eated
-    mov ax,value_temp[8]
-    cmp ax,1
-    je  alive
-    cmp ax,2048 ;在 go_snack子程序设置value_temp[8]的 时候还没有更新蛇尾的情况, 所以 这里的意思是移动后的蛇头到了还没有移动的蛇尾的位置, 也算活, 因为蛇尾也要移动
-    je  alive
-    mov al,0
-    mov game_flag[0],al
-    jmp alive_end
-alive:
-    mov al,2
-    mov game_flag[0],al
-    jmp alive_end
-eated:
-    mov ax,value_temp[8]
-    cmp ax,1
-    je  alive
-    mov al,0
-    mov game_flag[0],al
-    jmp alive_end
-alive_end:
-    ret
-is_alive endp
+;-------------------------------------------------
+;增长蛇的子程序
+;入口参数: ax: 蛇头的坐标 bx: 移动方向
+;出口参数: 无
+increase_snake proc near
+	cmp bl, 0
+	je increase_up
+	cmp bl, 1
+	je increase_down
+	cmp bl, 2
+	je increase_left
+	cmp bl, 3
+	je increase_right
+increase_up:
+    sub ax, 84
+	jmp increase_snake_end
+increase_down:
+    add ax, 84
+	jmp increase_snake_end
+increase_left:
+    sub ax, 2
+	jmp increase_snake_end
+increase_right:
+    add ax, 2
+	jmp increase_snake_end
+increase_snake_end:
+    ret	
+increase_snake endp
+
+
 ;--------------------------------------------------
 ;让蛇朝着snake_dir的方向走
-go_snake proc near
-    mov  al,select[0]
-    cmp  al,1               ;如果是AI蛇
-    je   ai_init           
+go_snake proc near       
     mov  bl,snake_dir[0]    ;蛇的方向
     mov  ax,snake_head[0]   ;ax: 蛇头的坐标
-    jmp  go
-ai_init:
-    mov bl,ai_snake_dir[0]
-    mov ax,ai_snake_head[0]
-go:     
+    mov  dx, 0
     cmp bl,0
     je up
     cmp bl,1
@@ -592,15 +582,15 @@ go:
     cmp bl,3
     je right
 up:    
-    cmp ax,84    ;第0行的坐标为0~82,第1行的坐标为 84 ~ 166, 当蛇头坐标已经在第一行的时候, 并且此时的方向还是向上,则死
-    jb relay     ;小于则跳转
-    sub ax,84    ;蛇的移动区域为 42*13 行, 一行有42个字符, 占82个字节
-    jmp food
+    cmp ax,84        ;第0行的坐标为0~82,第1行的坐标为 84 ~ 166, 当蛇头坐标已经在第一行的时候, 并且此时的方向还是向上,则死
+    jb relay         ;蛇死了
+    sub ax,84        ;蛇的移动区域为 42*13 行, 一行有42个字符, 占82个字节
+    jmp is_meet_body
 down:
-    cmp ax,1008  ;一共有13行, 从第0行开始计数, 第12行的开头坐标为1008(84*12), 如果,此时蛇头还是向下走则死
-    jg relay
+    cmp ax,1008  ;一共有13行, 从第0行开始计数, 最后一行的开头坐标为1008(84*12), 如果,此时蛇头还是向下走则死
+    jg relay     ;蛇死了
     add ax,84
-    jmp food
+    jmp is_meet_body
 left:     
     push ax     
     mov bl,84   
@@ -609,7 +599,7 @@ left:
     je relay
     pop ax
     sub ax,2
-    jmp food
+    jmp is_meet_body
 right:    
     push ax
     mov bl,84     
@@ -618,68 +608,70 @@ right:
     je relay
     pop ax
     add ax,2
-    jmp food
-relay:      
+    jmp is_meet_body
+relay:           ;8086 在标签间跳转是短跳转, 在此之前的如果直接跳掉snake_over 会溢出
     jmp snake_over
-food:       
-    mov bl,select[0]
-    cmp bl,0
-    je p_game         
-    mov bx,ai_snake_head[0]
-    mov ai_snake_head[0],ax
-    jmp c_go           
-p_game:     
-    mov bx, snake_head[0]   ;蛇头的旧坐标
-    mov snake_head[0],ax    ;蛇头的新坐标
-c_go:               
-    mov si,ax         
-    push bx          
-    mov bx,offset s_locate  
-    mov cx,[bx+si]   
-    pop bx                
-    mov s_locate[si], bx  ;蛇头的新坐标位置的值为其旧坐标的位置(指针, 一条蛇类似一个链表)
-    mov value_temp[8],cx  ;将蛇头的新坐标存放在value_temp[8]中  
-    cmp cx,1              
-    jne snake_over        ;蛇头的新位置的值不是1(蛇头碰到了蛇身), 则死
-continue:                 ;循环, 直到找到蛇尾
-    mov cx,s_locate[bx]   
-    cmp cx,2048           
-    je compare            
-    mov ax,bx             
-    mov bx,cx          
-    jmp continue       
-compare:            
-    mov value_temp[10],bx ;bx是蛇尾的位置
-    push bx               
-    push ax               ;ax是蛇尾之前的蛇身
-    call food_eat         
-    pop ax                
-    pop bx                
-    mov dl,eat_food[0]    
-    cmp dl,1              
-    je go_end             
-    mov dx,1              ;把原来蛇尾的坐标的相应数组的值改为1(为空时是1)
-    mov s_locate[bx],dx
-    mov dx, 2048
-    mov bx, ax
-    mov s_locate[bx],dx
-    jmp go_end
+is_meet_body:
+    mov si, ax
+    mov bx, s_locate[si]
+	cmp bx, 1         ;如果蛇头前面是空地, 那么就可以把蛇头直接前一一格
+	jne is_meet_tail  ; 如果蛇头前面不是空地, 就还要判断蛇头前面是蛇身还是蛇尾
+ate_food:
+    mov cx, snake_head[0]
+	mov snake_head[0], ax
+	mov si, ax
+	mov s_locate[si], cx ;将蛇头前移一格
+	call food_eat        ;判断蛇吃没吃到食物
+	mov cl, eat_food[0]  
+	cmp cl, 1            ;如果吃到了, 就不用移动蛇尾了
+	je go_end        
+	mov dx, 1            ;如果没有吃到, 那么就还要移动蛇尾, 但不用再移动蛇头了
+    jmp move_tail	
+is_meet_tail:           ;蛇头移动后有可能与未移动的蛇尾重合, 这种情况下蛇不算死, 在这种情况下需要先移动蛇尾再移动蛇头, 不然蛇头把蛇尾覆盖了, 就找不到蛇尾了
+    cmp bx, 2048	
+    jne snake_over
+move_tail:               
+    push ax             ;ax 存放了移动后的蛇头的坐标
+	mov ax, snake_head[0] ;蛇头移动之前的坐标
+	mov si, ax
+	mov bx, s_locate[si]  ;蛇头之后蛇身的坐标
+	mov si, bx
+    mov cx, s_locate[si]  ;蛇头之后蛇身之后蛇身的坐标
+move_tail_loop:	
+	cmp cx, 2048  
+	je set_tail
+	mov ax, bx
+	mov bx, cx
+	mov si, bx
+	mov cx, s_locate[si]
+	jmp move_tail_loop
+set_tail:                ;将蛇尾向前移动一格
+    mov si, bx
+	mov s_locate[si], 1
+	mov snake_tail[0], bx
+	mov si, ax
+	mov s_locate[si], 2048    
+	
+	pop ax
+	cmp dx, 1
+	je go_end
+	mov cx, snake_head[0]
+	mov snake_head[0], ax
+	mov si, ax
+	mov s_locate[si], cx
+	jmp go_end
 snake_over:
     mov bl,0
     mov game_flag[0],bl
     jmp go_end
-go_end:  
+go_end:
     ret
 go_snake endp
 ;--------------------------------------------------
-;画蛇
+;在游戏区域内画蛇 子程序
+;入口参数:
+;出口参数:
 draw_snake proc near
-    mov al,select[0]
-    cmp al,0
-    je peo_game
-    mov ax,ai_snake_head[0]
-    jmp con_go
-peo_game:
     mov ax,snake_head[0]
 con_go:
     push ax
@@ -691,16 +683,18 @@ con_go:
     mov bl,2
     div bl
     mov coordinate_x,al
-    call locate
+    call locate        ;定位字符需要显示的显存地址
     mov es,value_temp[0]
     mov si,value_temp[2]
-    mov dl,'@'
+    mov dl,'o'
     mov es:[si],dl
     pop ax
 draw_body:
-    mov bx,ax
-    mov ax,s_locate[bx]
-    push ax
+    mov bx,ax       ;ax 代表蛇头的坐标
+    mov ax,s_locate[bx]  ;ax 代表蛇头(蛇身) 之后的 蛇身的坐标
+    cmp ax, 2048    ;判断bx所代表的坐标是不是蛇尾
+	je draw_tail
+	push ax
     mov dl,84
     div dl
     mov coordinate_y,al
@@ -709,14 +703,10 @@ draw_body:
     mov dl,2
     div dl
     mov coordinate_x,al
-    pop ax
-    cmp ax,2048
-    je draw_tail
-    push ax
-    call locate
+    call locate          ;定位字符需要显示的显存地址
     mov es,value_temp[0]
     mov si,value_temp[2]
-    mov dl,'+'
+    mov dl,'+'              ;用 + 号来表示蛇身
     mov es:[si],dl
     pop ax
     jmp draw_body
@@ -731,15 +721,13 @@ draw_tail:
     mov bl,2
     div bl
     mov coordinate_x,al
-    call locate
+    call locate    
     mov es,value_temp[0]
     mov si,value_temp[2]
-    mov dl,'>'
+    mov dl,'+'    
     mov es:[si],dl
-    pop ax
-    mov bx,value_temp[10]
-    cmp ax,bx
-    je draw_end
+    pop ax     ;蛇尾的坐标
+
     call clear_tail
 draw_end:    
     ret
@@ -750,7 +738,7 @@ draw_snake endp
 ;出口参数:无
 ;作用: 把指定把屏幕上坐标的字符替换成空格
 clear_tail proc near
-    mov ax,value_temp[10]
+    mov ax, snake_tail[0]
     mov dl,84
     div dl
     mov coordinate_y,al
@@ -804,7 +792,6 @@ food_begin:
 food_end:
     mov dl,'&'      ;改变了该屏幕上该位置的字符的值, 字符的属性没有变
     mov es:[si],dl  
-
     ret
 food_create endp
 ;--------------------------------------------------
@@ -870,7 +857,7 @@ blank:
 clear endp
 ;--------------------------------------------------
 ;显示信息    
-display proc near
+display_welcome proc near
     mov cx, 13h      ;从snack00 到 snack18, 一共有19行
     mov ax, 0b81fh   ;直接将字符串写到显存中, 在本程序中 es:si 表示显存的地址, 显存中的每一个字符位由2个字节来表示, 
     mov es, ax       ; 0b800h 表示显存的基址, 显存的基址一个单位对应屏幕上8个字符(16个字节, 一个字符两个字节), 0b81fh 偏移了248个字符  
@@ -916,10 +903,10 @@ loop01:
 	;add bx, 3
     loop row1
     ret
-display endp
+display_welcome endp
 ;--------------------------------------------------
 ;登陆界面选项处理
-display_choose proc near
+display_welcome_choose proc near
     mov cx, 3
 three_input:
     mov ax, 0b8f1h
@@ -971,10 +958,7 @@ level_record:
     jmp end_show
 end_show:   
     ret
-display_choose endp
+display_welcome_choose endp
 ;--------------------------------------------------
-
 code ends
-
-
 end start
